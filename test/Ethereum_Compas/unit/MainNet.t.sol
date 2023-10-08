@@ -130,14 +130,7 @@ contract MainNet is PerpetuExTest {
         uint256 positionId = perpetuEx.userPositionIdByIndex(USER, 0);
 
         perpetuEx.increaseCollateral(positionId, ADDITIONAL_COLLATERAL);
-        (
-            bool isLong,
-            uint256 totalValue,
-            uint256 size,
-            uint256 collateral,
-            address owner,
-
-        ) = perpetuEx.positions(positionId);
+        (, , , uint256 collateral, , ) = perpetuEx.positions(positionId);
         assertEq(collateral, ADDITIONAL_COLLATERAL + COLLATERAL);
         vm.stopPrank();
     }
