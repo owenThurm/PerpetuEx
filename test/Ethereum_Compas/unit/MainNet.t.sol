@@ -6,4 +6,4 @@ import {PerpetuEx} from "../../../src/PerpetuEx.sol";
 import {PerpetuExTest} from "../../unit/PerpetuEx.t.sol";
 import {console} from "forge-std/Test.sol";
 
-contract EthereumCompassUnit is PerpetuExTest {}
+contract MainNet is PerpetuExTest {}

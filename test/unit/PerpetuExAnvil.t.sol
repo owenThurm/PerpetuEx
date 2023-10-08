@@ -46,9 +46,9 @@ contract PerpetuExTestAnvil is Test, IPerpetuEx {
     // LP mock params
     uint256 LIQUIDITY = 1000000e6;
 
-    uint256 private constant MAX_UTILIZATION_PERCENTAGE = 80; //80%
-    uint256 private constant MAX_UTILIZATION_PERCENTAGE_DECIMALS = 100;
-    uint256 private constant SECONDS_PER_YEAR = 31536000; // 365 * 24 * 60 * 60
+    uint256 public constant MAX_UTILIZATION_PERCENTAGE = 80; //80%
+    uint256 public constant MAX_UTILIZATION_PERCENTAGE_DECIMALS = 100;
+    uint256 public constant SECONDS_PER_YEAR = 31536000; // 365 * 24 * 60 * 60
 
     uint256 s_totalLiquidityDeposited;
 
