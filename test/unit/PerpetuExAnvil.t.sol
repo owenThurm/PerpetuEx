@@ -9,7 +9,7 @@ import {HelperConfig} from "../../script/HelperConfig.s.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IPerpetuEx} from "../../src/IPerpetuEx.sol";
 import {MockV3Aggregator} from "../mocks/MockV3Aggregator.sol";
-import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {ERC20Mock} from "@openzeppelin/contracts/mocks/ERC20Mock.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
 interface IUSDC {
@@ -17,7 +17,10 @@ interface IUSDC {
 
     function mint(address to, uint256 amount) external;
 
-    function configureMinter(address minter, uint256 minterAllowedAmount) external;
+    function configureMinter(
+        address minter,
+        uint256 minterAllowedAmount
+    ) external;
 
     function masterMinter() external view returns (address);
 
@@ -82,15 +85,27 @@ contract PerpetuExTestAnvil is Test, IPerpetuEx {
     // forge test --match-test "testUserPnlIncreaseIfBtcPriceIncrease" -vvvv
     function testUserPnlIncreaseIfBtcPriceIncrease() public {
         // setup
-        MockV3Aggregator mockV3Aggregator = new MockV3Aggregator(8, 20000 * 1e8);
-        PerpetuEx perpetuExBtcIncrease = new PerpetuEx(address(mockV3Aggregator), ERC20Mock(usdcMock));
+        MockV3Aggregator mockV3Aggregator = new MockV3Aggregator(
+            8,
+            20000 * 1e8
+        );
+        PerpetuEx perpetuExBtcIncrease = new PerpetuEx(
+            address(mockV3Aggregator),
+            ERC20Mock(usdcMock)
+        );
 
         //     // Arrange - LP
         vm.prank(USER);
-        ERC20Mock(usdcMock).approve(address(perpetuExBtcIncrease), type(uint256).max);
+        ERC20Mock(usdcMock).approve(
+            address(perpetuExBtcIncrease),
+            type(uint256).max
+        );
 
         vm.startPrank(LP);
-        ERC20Mock(usdcMock).approve(address(perpetuExBtcIncrease), type(uint256).max);
+        ERC20Mock(usdcMock).approve(
+            address(perpetuExBtcIncrease),
+            type(uint256).max
+        );
         perpetuExBtcIncrease.deposit(LIQUIDITY * 1e12, LP);
         vm.stopPrank();
 
@@ -98,7 +113,10 @@ contract PerpetuExTestAnvil is Test, IPerpetuEx {
         vm.startPrank(USER);
         perpetuExBtcIncrease.depositCollateral(COLLATERAL * 1e12);
         perpetuExBtcIncrease.createPosition(SIZE, true);
-        uint256 positionId = perpetuExBtcIncrease.userPositionIdByIndex(USER, 0);
+        uint256 positionId = perpetuExBtcIncrease.userPositionIdByIndex(
+            USER,
+            0
+        );
         vm.stopPrank();
 
         //     //////////////// BTC price increases from $20_000 to $30_000 ////////////////
@@ -130,9 +148,19 @@ contract PerpetuExTestAnvil is Test, IPerpetuEx {
         console.log("borrowingFees", borrowingFees);
         perpetuExBtcIncrease.closePosition(positionId);
         vm.stopPrank();
-        uint256 userBalanceAfterClosingPosition = IERC20(usdcMock).balanceOf(USER);
-        console.log("userBalanceAfterClosingPosition", userBalanceAfterClosingPosition);
-        uint256 expectedBalanceAfterClosingPosition = COLLATERAL * 1e12 + userPnl;
-        assertEq(userBalanceAfterClosingPosition, expectedBalanceAfterClosingPosition);
+        uint256 userBalanceAfterClosingPosition = IERC20(usdcMock).balanceOf(
+            USER
+        );
+        console.log(
+            "userBalanceAfterClosingPosition",
+            userBalanceAfterClosingPosition
+        );
+        uint256 expectedBalanceAfterClosingPosition = COLLATERAL *
+            1e12 +
+            userPnl;
+        assertEq(
+            userBalanceAfterClosingPosition,
+            expectedBalanceAfterClosingPosition
+        );
     }
 }

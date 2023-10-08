@@ -5,7 +5,7 @@ pragma solidity ^0.8.19;
 import {Script} from "forge-std/Script.sol";
 import {MockV3Aggregator} from "../test/mocks/MockV3Aggregator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {ERC20Mock} from "@openzeppelin/contracts/mocks/ERC20Mock.sol";
 
 contract HelperConfig is Script {
     NetworkConfig public activeNetworkConfig;
@@ -55,8 +55,10 @@ contract HelperConfig is Script {
         );
         ERC20Mock usdcMock = new ERC20Mock();
         vm.stopBroadcast();
-        NetworkConfig memory anvilConfig =
-            NetworkConfig({priceFeed: address(mockV3Aggregator), usdc: address(usdcMock)});
+        NetworkConfig memory anvilConfig = NetworkConfig({
+            priceFeed: address(mockV3Aggregator),
+            usdc: address(usdcMock)
+        });
         return anvilConfig;
     }
 }
