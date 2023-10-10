@@ -1,6 +1,7 @@
 -include .env
 
 single:; forge test --match-test testIncreaseCollateral1  -vv --fork-url "${MAINNET_RPC_URL}"
+
 ##Main net tests
 test-mainnet:; forge test -vv --match-path test/Ethereum_Compas/unit/MainNet.t.sol --fork-url "${MAINNET_RPC_URL}"
 coverage-mainnet:; forge coverage --fork-url ${MAINNET_RPC_URL} -vvvv
