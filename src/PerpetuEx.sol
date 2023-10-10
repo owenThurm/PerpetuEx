@@ -53,15 +53,12 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
 
     uint256 private s_nonce;
 
-    uint256 public s_totalLiquidityDeposited;
+    uint256 public s_totalLiquidityDeposited; //@audit totally deposit liquidity
     int256 public s_totalPnl;
     uint256 public s_shortOpenInterest;
     uint256 public s_longOpenInterestInTokens;
 
-    constructor(
-        address priceFeed,
-        IERC20 _usdc
-    ) ERC4626(_usdc) ERC20("PerpetuEx", "PXT") {
+    constructor(address priceFeed, IERC20 _usdc) ERC4626(_usdc) ERC20("PerpetuEx", "PXT") {
         i_priceFeed = AggregatorV3Interface(priceFeed);
         i_usdc = IERC20(_usdc);
 
@@ -98,48 +95,43 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         i_usdc.safeTransfer(msg.sender, withdrawalAmount);
     }
 
-    function deposit(
-        uint256 assets,
-        address receiver
-    ) public override nonReentrant returns (uint256 shares) {
+    function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256 shares) {
         uint256 newTotalLiquidity = s_totalLiquidityDeposited + assets;
         shares = super.deposit(assets, receiver);
         s_totalLiquidityDeposited = newTotalLiquidity;
     }
+    //@audit don't have check to min deposit
 
-    function withdraw(
-        uint256 assets,
-        address receiver,
-        address owner
-    ) public override nonReentrant returns (uint256 shares) {
+    function withdraw(uint256 assets, address receiver, address owner)
+        public
+        override
+        nonReentrant
+        returns (uint256 shares)
+    {
         uint256 newTotalLiquidity = s_totalLiquidityDeposited - assets;
         _maxLiquidityUtilization(assets);
         shares = super.withdraw(assets, receiver, owner);
         s_totalLiquidityDeposited = newTotalLiquidity;
     }
+    // @audit Reviewed this function looks right
 
-    function mint(
-        uint256 shares,
-        address receiver
-    ) public override nonReentrant returns (uint256 assets) {
+    function mint(uint256 shares, address receiver) public override nonReentrant returns (uint256 assets) {
         assets = super.mint(shares, receiver);
         s_totalLiquidityDeposited += assets;
     }
 
-    function redeem(
-        uint256 shares,
-        address receiver,
-        address owner
-    ) public override nonReentrant returns (uint256 assets) {
+    function redeem(uint256 shares, address receiver, address owner)
+        public
+        override
+        nonReentrant
+        returns (uint256 assets)
+    {
         assets = super.redeem(shares, receiver, owner);
         s_totalLiquidityDeposited -= assets;
     }
 
     function createPosition(uint256 _size, bool _isLong) external nonReentrant {
-        if (
-            _size == 0 ||
-            _calculateUserLeverage(_size, msg.sender) > maxLeverage
-        ) {
+        if (_size == 0 || _calculateUserLeverage(_size, msg.sender) > maxLeverage) {
             revert PerpetuEx__InvalidSize();
         }
         if (userToPositionIds[msg.sender].length() > 0) {
@@ -166,17 +158,11 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         if (_positionId == 0) revert PerpetuEx__InvalidPositionId();
         if (position.owner != msg.sender) revert PerpetuEx__NotOwner();
         uint256 borrowingFees = _borrowingFees(_positionId);
-        int256 pnl = _calculateUserPnl(_positionId, position.isLong) -
-            int256(borrowingFees);
+        int256 pnl = _calculateUserPnl(_positionId, position.isLong) - int256(borrowingFees);
         uint256 collateralAmount = position.collateral;
         if (pnl > 0) {
             uint256 profits = uint256(pnl);
-            _updateOpenInterests(
-                position.isLong,
-                position.size,
-                getAverageOpenPrice(_positionId),
-                PositionAction.Close
-            );
+            _updateOpenInterests(position.isLong, position.size, getAverageOpenPrice(_positionId), PositionAction.Close);
             s_totalPnl -= int256(profits);
             userToPositionIds[msg.sender].remove(_positionId);
             delete positions[_positionId];
@@ -185,12 +171,7 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         }
         if (pnl <= 0) {
             uint256 unsignedPnl = SignedMath.abs(pnl);
-            _updateOpenInterests(
-                position.isLong,
-                position.size,
-                getAverageOpenPrice(_positionId),
-                PositionAction.Close
-            );
+            _updateOpenInterests(position.isLong, position.size, getAverageOpenPrice(_positionId), PositionAction.Close);
             s_totalPnl += int256(unsignedPnl);
             userToPositionIds[msg.sender].remove(_positionId);
             delete positions[_positionId];
@@ -199,41 +180,27 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         }
     }
 
-    function increaseSize(
-        uint256 _positionId,
-        uint256 _size
-    ) external nonReentrant {
+    function increaseSize(uint256 _positionId, uint256 _size) external nonReentrant {
         Position storage position = positions[_positionId];
         if (position.owner != msg.sender) revert PerpetuEx__NotOwner();
         uint256 currentPrice = getPriceFeed();
         uint256 borrowingFees = _borrowingFees(_positionId);
         s_totalPnl -= int256(borrowingFees);
         positions[_positionId] = _updateCollateral(position, borrowingFees);
-        if (
-            _size == 0 ||
-            _calculateUserLeverage(_size, msg.sender) > maxLeverage
-        ) {
+        if (_size == 0 || _calculateUserLeverage(_size, msg.sender) > maxLeverage) {
             revert PerpetuEx__InvalidSize();
         }
         _maxLiquidityUtilization(0);
         uint256 addedValue = _size * currentPrice;
         position = positions[_positionId];
-        _updateOpenInterests(
-            position.isLong,
-            _size,
-            currentPrice,
-            PositionAction.IncreaseSize
-        );
+        _updateOpenInterests(position.isLong, _size, currentPrice, PositionAction.IncreaseSize);
         position.totalValue += addedValue;
         position.size += _size;
         position.openTimestamp = block.timestamp;
         positions[_positionId] = position;
     }
 
-    function decreaseSize(
-        uint256 _positionId,
-        uint256 _size
-    ) external nonReentrant {
+    function decreaseSize(uint256 _positionId, uint256 _size) external nonReentrant {
         Position memory position = positions[_positionId];
         if (position.owner != msg.sender) revert PerpetuEx__NotOwner();
         if (_size == 0) {
@@ -245,12 +212,7 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
             closePosition(_positionId);
             return;
         }
-        _updateOpenInterests(
-            position.isLong,
-            _size,
-            currentPrice,
-            PositionAction.DecreaseSize
-        );
+        _updateOpenInterests(position.isLong, _size, currentPrice, PositionAction.DecreaseSize);
         int256 realizedPnl;
         uint256 averagePrice = getAverageOpenPrice(_positionId);
         uint256 borrowingFees = _borrowingFees(_positionId);
@@ -258,18 +220,14 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         position = _updateCollateral(position, borrowingFees);
         realizedPnl = (pnl * int256(_size)) / int256(position.size);
         s_totalPnl += realizedPnl;
-        uint256 collateralAmount = (position.collateral * _size) /
-            position.size;
+        uint256 collateralAmount = (position.collateral * _size) / position.size;
         position.size -= _size;
         position.totalValue -= _size * averagePrice;
         position.openTimestamp = block.timestamp;
         if (realizedPnl > 0) {
             uint256 profits = uint256(realizedPnl);
             uint256 profitRealized = profits + collateralAmount;
-            positions[_positionId] = _updateCollateral(
-                position,
-                profitRealized
-            );
+            positions[_positionId] = _updateCollateral(position, profitRealized);
             i_usdc.safeTransfer(msg.sender, profitRealized);
         } else if (pnl <= 0) {
             uint256 unsignedPnl = SignedMath.abs(realizedPnl);
@@ -280,10 +238,7 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
     }
 
     //@audit-ok
-    function increaseCollateral(
-        uint256 _positionId,
-        uint256 _collateral
-    ) external nonReentrant {
+    function increaseCollateral(uint256 _positionId, uint256 _collateral) external nonReentrant {
         Position storage position = positions[_positionId];
         if (_collateral == 0) revert PerpetuEx__InvalidCollateral();
         if (position.owner != msg.sender) revert PerpetuEx__NotOwner();
@@ -297,12 +252,9 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
             revert PerpetuEx__InsufficientCollateral();
         }
         if (_amount == 0) revert PerpetuEx__InvalidAmount(); //
-
         uint256 userCollateral = collateral[msg.sender];
         collateral[msg.sender] = userCollateral - _amount;
-        Position memory position = positions[
-            userToPositionIds[msg.sender].at(0)
-        ];
+        Position memory position = positions[userToPositionIds[msg.sender].at(0)];
         uint256 size = position.size;
         uint256 updatedLeverage = _calculateUserLeverage(size, msg.sender);
         if (updatedLeverage > maxLeverage) {
@@ -320,8 +272,9 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         uint256 borrowingFees = _borrowingFees(positionId);
         uint256 price = getPriceFeed();
 
-        if (userLeverage <= maxLeverage)
+        if (userLeverage <= maxLeverage) {
             revert PerpetuEx__NoLiquidationNeeded();
+        }
 
         uint256 newCollateral = collateral[_user] - borrowingFees;
         uint256 liquidatorFee = newCollateral / liquidationDenominator;
@@ -339,18 +292,12 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
     /// ====================================
     /// ======= Internal Functions =========
     /// ====================================
-    function _borrowingFees(
-        uint256 _positionId
-    ) internal view returns (uint256) {
+    function _borrowingFees(uint256 _positionId) internal view returns (uint256) {
         Position storage position = positions[_positionId];
         uint256 sizeInUsdc = position.totalValue;
-        uint256 secondsPositionHasExisted = block.timestamp -
-            position.openTimestamp;
-        uint256 borrowingPerSizePerSecond = USDC_DECIMALS_ORACLE_MULTIPLIER /
-            (borrowingRate * SECONDS_PER_YEAR);
-        uint256 numerator = sizeInUsdc *
-            secondsPositionHasExisted *
-            borrowingPerSizePerSecond;
+        uint256 secondsPositionHasExisted = block.timestamp - position.openTimestamp;
+        uint256 borrowingPerSizePerSecond = USDC_DECIMALS_ORACLE_MULTIPLIER / (borrowingRate * SECONDS_PER_YEAR);
+        uint256 numerator = sizeInUsdc * secondsPositionHasExisted * borrowingPerSizePerSecond;
         uint256 borrowingFees = numerator / USDC_DECIMALS_ORACLE_MULTIPLIER;
         return borrowingFees;
     }
@@ -358,15 +305,9 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
     /**
      * @dev Compute the liquidity reserve restriction and substract the total pnl of traders from it
      */
-    function _updatedLiquidity()
-        internal
-        view
-        returns (uint256 updatedLiquidity)
-    {
-        uint256 liquidityReserveRestriction = totalAssets().mulDiv(
-            maxUtilizationPercentage,
-            MAX_UTILIZATION_PERCENTAGE_DECIMALS
-        );
+    function _updatedLiquidity() internal view returns (uint256 updatedLiquidity) {
+        uint256 liquidityReserveRestriction =
+            totalAssets().mulDiv(maxUtilizationPercentage, MAX_UTILIZATION_PERCENTAGE_DECIMALS);
         uint256 totalPnl = SignedMath.abs(s_totalPnl);
         if (s_totalPnl >= 0) {
             updatedLiquidity = liquidityReserveRestriction - totalPnl;
@@ -376,106 +317,71 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
             updatedLiquidity = liquidityReserveRestriction + totalPnl;
             return updatedLiquidity;
         }
-    }
+    } //@audit review this function = reviewed this function looks right
 
-    function _totalOpenInterest(
-        bool _isLong,
-        uint256 _size,
-        uint256 _currentPrice
-    ) internal view returns (uint256 totalOpenInterestValue) {
+    function _totalOpenInterest(bool _isLong, uint256 _size, uint256 _currentPrice)
+        internal
+        view
+        returns (uint256 totalOpenInterestValue)
+    {
         // Calculate new open interests
-        uint256 newLongOpenInterestInTokens = _isLong
-            ? s_longOpenInterestInTokens + _size
-            : s_longOpenInterestInTokens;
+        uint256 newLongOpenInterestInTokens = _isLong ? s_longOpenInterestInTokens + _size : s_longOpenInterestInTokens;
 
-        uint256 newShortOpenInterest = !_isLong
-            ? s_shortOpenInterest + (_size * _currentPrice)
-            : s_shortOpenInterest;
+        uint256 newShortOpenInterest = !_isLong ? s_shortOpenInterest + (_size * _currentPrice) : s_shortOpenInterest;
 
         // Calculate the total open interest value
-        totalOpenInterestValue =
-            (newLongOpenInterestInTokens * _currentPrice) +
-            newShortOpenInterest;
-    }
+        totalOpenInterestValue = (newLongOpenInterestInTokens * _currentPrice) + newShortOpenInterest;
+    } //@audit the s_shortOpenInterest don't have the price feed
 
-    function _updateOpenInterests(
-        bool _isLong,
-        uint256 _size,
-        uint256 _price,
-        PositionAction positionAction
-    ) internal {
+    function _updateOpenInterests(bool _isLong, uint256 _size, uint256 _price, PositionAction positionAction)
+        internal
+    {
         if (_isLong) {
-            if (
-                positionAction == PositionAction.Open ||
-                positionAction == PositionAction.IncreaseSize
-            ) {
+            if (positionAction == PositionAction.Open || positionAction == PositionAction.IncreaseSize) {
                 s_longOpenInterestInTokens += _size;
-            } else if (
-                positionAction == PositionAction.Close ||
-                positionAction == PositionAction.DecreaseSize
-            ) {
+            } else if (positionAction == PositionAction.Close || positionAction == PositionAction.DecreaseSize) {
                 s_longOpenInterestInTokens -= _size;
             }
         } else if (!_isLong) {
             uint256 valueChange = _size * _price;
-            if (
-                positionAction == PositionAction.Open ||
-                positionAction == PositionAction.IncreaseSize
-            ) {
+            if (positionAction == PositionAction.Open || positionAction == PositionAction.IncreaseSize) {
                 s_shortOpenInterest += valueChange;
-            } else if (
-                positionAction == PositionAction.Close ||
-                positionAction == PositionAction.DecreaseSize
-            ) {
+            } else if (positionAction == PositionAction.Close || positionAction == PositionAction.DecreaseSize) {
                 s_shortOpenInterest -= valueChange;
             }
         } else {
             revert PerpetuEx__NoPositionChosen();
         }
-    }
+    } //@audit review this function
 
     //Only removes collateral
-    function _updateCollateral(
-        Position memory position,
-        uint256 _amount
-    ) internal returns (Position memory updatedPosition) {
+    function _updateCollateral(Position memory position, uint256 _amount)
+        internal
+        returns (Position memory updatedPosition)
+    {
         position.collateral -= _amount;
         collateral[position.owner] -= _amount;
         updatedPosition = position;
     }
 
-    function _convertToShares(
-        uint256 assets,
-        Math.Rounding rounding
-    ) internal view override returns (uint256) {
+    function _convertToShares(uint256 assets, Math.Rounding rounding) internal view override returns (uint256) {
         if (totalSupply() == 0) return assets;
-        return
-            assets.mulDiv(
-                totalSupply() + 10 ** _decimalsOffset(),
-                totalAssets() + 1,
-                rounding
-            );
-    }
+        return assets.mulDiv(totalSupply() + 10 ** _decimalsOffset(), totalAssets() + 1, rounding);
+    } //@audit review this function
 
     function _maxLiquidityUtilization(uint256 assets) internal view {
         uint256 currentPrice = getPriceFeed();
         uint256 updatedLiquidity = _updatedLiquidity() - assets;
-        if (
-            s_shortOpenInterest + (s_longOpenInterestInTokens * currentPrice) >
-            updatedLiquidity * DECIMALS_DELTA
-        ) {
+        if (s_shortOpenInterest + (s_longOpenInterestInTokens * currentPrice) > updatedLiquidity * DECIMALS_DELTA) {
             revert PerpetuEx__InsufficientLiquidity();
         }
-    }
+    } //@audit review this function IMPORTANT, reviewed this function looks right but s_shortOpenInterest don't have the price feed
 
     // =========================
     // ==== View/Pure Functions =====
     // =========================
 
-    function userPositionIdByIndex(
-        address user,
-        uint256 index
-    ) public view returns (uint256) {
+    function userPositionIdByIndex(address user, uint256 index) public view returns (uint256) {
         return userToPositionIds[user].at(index);
     }
 
@@ -483,19 +389,13 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         return Oracle.getBtcInUsdPrice(i_priceFeed);
     }
 
-    function _getConversionRate(
-        uint256 _amount
-    ) internal view returns (uint256) {
+    function _getConversionRate(uint256 _amount) internal view returns (uint256) {
         return Oracle.convertPriceFromUsdToBtc(_amount, i_priceFeed);
     }
 
-    function getAverageOpenPrice(
-        uint256 _positionId
-    ) public view returns (uint256) {
+    function getAverageOpenPrice(uint256 _positionId) public view returns (uint256) {
         Position memory position = positions[_positionId];
-        if (
-            _positionId == 0 || position.totalValue == 0 || position.size == 0
-        ) {
+        if (_positionId == 0 || position.totalValue == 0 || position.size == 0) {
             revert PerpetuEx__InvalidPositionId();
         }
         return position.totalValue / position.size;
@@ -513,28 +413,18 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         return maxUtilizationPercentage;
     }
 
-    function getMaxUtilizationPercentageDecimals()
-        public
-        pure
-        returns (uint256)
-    {
+    function getMaxUtilizationPercentageDecimals() public pure returns (uint256) {
         return MAX_UTILIZATION_PERCENTAGE_DECIMALS;
     }
 
-    function _calculateUserLeverage(
-        uint256 _size,
-        address _user
-    ) internal view returns (uint256 userLeverage) {
+    function _calculateUserLeverage(uint256 _size, address _user) internal view returns (uint256 userLeverage) {
         uint256 priceFeed = getPriceFeed();
         uint256 priceFeedPrecisionAdjusted = priceFeed * DECIMALS_PRECISION; //1e18 * 1e4 = 1e22
 
         uint256 userCollateral = collateral[_user] * DECIMALS_DELTA; //1e6 * 1e12 = 1e18
         // 20 * 10 **4 = 200000
         if (userToPositionIds[_user].length() == 0) {
-            userLeverage = _size.mulDiv(
-                priceFeedPrecisionAdjusted,
-                userCollateral
-            );
+            userLeverage = _size.mulDiv(priceFeedPrecisionAdjusted, userCollateral);
             return userLeverage;
         }
         //TODO: Add support for more orders from the same user. For now we block it.
@@ -543,37 +433,21 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         int256 userPnl = _calculateUserPnl(positionId, position.isLong);
 
         if (userPnl == 0) {
-            userLeverage = _size.mulDiv(
-                priceFeedPrecisionAdjusted,
-                userCollateral
-            );
+            userLeverage = _size.mulDiv(priceFeedPrecisionAdjusted, userCollateral);
             return userLeverage;
         }
         if (userPnl > 0) {
-            userLeverage = (
-                _size.mulDiv(
-                    priceFeedPrecisionAdjusted,
-                    userCollateral + uint256(userPnl)
-                )
-            );
+            userLeverage = (_size.mulDiv(priceFeedPrecisionAdjusted, userCollateral + uint256(userPnl)));
             return userLeverage;
         }
         if (userPnl < 0) {
             uint256 unsignedPnl = SignedMath.abs(userPnl);
-            userLeverage = (
-                _size.mulDiv(
-                    priceFeedPrecisionAdjusted,
-                    userCollateral - unsignedPnl
-                )
-            );
+            userLeverage = (_size.mulDiv(priceFeedPrecisionAdjusted, userCollateral - unsignedPnl));
             return userLeverage;
         }
     }
 
-    function _calculateUserPnl(
-        uint256 _positionId,
-        bool _isLong
-    ) internal view returns (int256 pnl) {
+    function _calculateUserPnl(uint256 _positionId, bool _isLong) internal view returns (int256 pnl) {
         uint256 currentPrice = getPriceFeed();
         uint256 averagePrice = getAverageOpenPrice(_positionId);
         Position storage position = positions[_positionId];
@@ -587,13 +461,8 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         }
     }
 
-    function maxWithdraw(
-        address owner
-    ) public view override returns (uint256 maxWithdrawAllowed) {
-        uint256 ownerAssets = super._convertToAssets(
-            balanceOf(owner),
-            Math.Rounding.Down
-        );
+    function maxWithdraw(address owner) public view override returns (uint256 maxWithdrawAllowed) {
+        uint256 ownerAssets = super._convertToAssets(balanceOf(owner), Math.Rounding.Down);
         uint256 updatedLiquidity = _updatedLiquidity();
         if (ownerAssets >= updatedLiquidity) {
             return maxWithdrawAllowed = updatedLiquidity;
@@ -602,35 +471,22 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         if (ownerAssets < updatedLiquidity) {
             return maxWithdrawAllowed = ownerAssets;
         }
-    }
+    } // @audit looks right
 
-    function maxRedeem(
-        address owner
-    ) public view override returns (uint256 maxRedeemAllowed) {
-        uint256 ownerAssets = super._convertToAssets(
-            balanceOf(owner),
-            Math.Rounding.Down
-        );
+    function maxRedeem(address owner) public view override returns (uint256 maxRedeemAllowed) {
+        uint256 ownerAssets = super._convertToAssets(balanceOf(owner), Math.Rounding.Down);
 
         uint256 updatedLiquidity = _updatedLiquidity();
 
         if (ownerAssets >= updatedLiquidity) {
             uint256 maxAssetsAllowed = updatedLiquidity;
-            return
-                maxRedeemAllowed = super._convertToShares(
-                    maxAssetsAllowed,
-                    Math.Rounding.Down
-                );
+            return maxRedeemAllowed = super._convertToShares(maxAssetsAllowed, Math.Rounding.Down);
         }
 
         if (ownerAssets < updatedLiquidity) {
-            return
-                maxRedeemAllowed = super._convertToShares(
-                    ownerAssets,
-                    Math.Rounding.Down
-                );
+            return maxRedeemAllowed = super._convertToShares(ownerAssets, Math.Rounding.Down);
         }
-    }
+    } // @audit looks right
 
     function totalAssets() public view override returns (uint256 assets) {
         if (s_totalPnl >= 0) {
@@ -641,7 +497,7 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
             uint256 totalPnl = SignedMath.abs(s_totalPnl);
             assets = s_totalLiquidityDeposited + totalPnl;
         }
-    }
+    } //@audit review this function, reviewed this function looks right
 
     function getLeverage(address _user) public view returns (uint256 leverage) {
         Position memory position = positions[userToPositionIds[_user].at(0)];
@@ -653,9 +509,7 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
         return borrowingRate;
     }
 
-    function getBorrowingFees(
-        address _user
-    ) public view returns (uint256 borrowingFees) {
+    function getBorrowingFees(address _user) public view returns (uint256 borrowingFees) {
         borrowingFees = _borrowingFees(userToPositionIds[_user].at(0));
     }
 
@@ -680,15 +534,11 @@ contract PerpetuEx is ERC4626, IPerpetuEx, Ownable, ReentrancyGuard {
     }
 
     //@audit -> isn't it dangerous?
-    function setMaxUtilizationPercentage(
-        uint256 _maxUtilizationPercentage
-    ) external onlyOwner {
+    function setMaxUtilizationPercentage(uint256 _maxUtilizationPercentage) external onlyOwner {
         maxUtilizationPercentage = _maxUtilizationPercentage;
     }
 
-    function setLiquidationDenominator(
-        uint8 _liquidationDenominator
-    ) external onlyOwner {
+    function setLiquidationDenominator(uint8 _liquidationDenominator) external onlyOwner {
         liquidationDenominator = _liquidationDenominator;
     }
 }
